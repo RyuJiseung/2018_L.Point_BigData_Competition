@@ -1,0 +1,410 @@
+---
+title: "A02 Collaborative Filtering Algorithm"
+output: html_document
+---
+
+# 1. 패키지 로드
+```{r}
+# install.packages("needs")
+library(needs)
+needs(dplyr, stringr, tibble,lubridate, ggplot2, reshape2,readr,tidyr)
+```
+
+# 2. RFM score 구하기
+```{r}
+RFM<- SPI %>% subset(BIZ_UNIT == "A02") %>% 
+  group_by(ID,BR_C,DE_DT,PD_S_NM,PD_M_NM,PD_H_NM,day) %>% 
+  summarise(cnt = n(), BUY_SUM = sum(as.numeric(BUY_AM))) %>% 
+  arrange(ID,DE_DT)
+RFM<- cbind(RFM,year = year(RFM$DE_DT), month = month(RFM$DE_DT)) 
+RFM<- RFM %>% group_by(ID,year,month,DE_DT,PD_H_NM,PD_S_NM,PD_M_NM) %>% 
+  summarise(cnt = n(), BUY_SUM = round(sum(BUY_SUM),-3))
+RFM<- RFM %>% filter(year != 2014)
+
+
+RFM_R<- RFM %>% group_by(ID,PD_H_NM,PD_M_NM,PD_S_NM,month) %>% summarise(R = 1)
+RFM_R <- RFM_R %>% dcast(ID + PD_H_NM + PD_M_NM + PD_S_NM ~ month)
+RFM_R[is.na(RFM_R)]<-0
+RFM_R_test <- as.matrix(RFM_R[,5:16],ncol=12) %*% as.matrix(c(1:12),ncol=1)
+RFM_R$Recency <- as.vector(RFM_R_test/sum(1:12))
+
+
+RFM_F<- RFM %>% group_by(ID,PD_H_NM,PD_M_NM,PD_S_NM,month) %>% summarise(cnt=n())
+RFM_F<- RFM_F %>% dcast(ID + PD_H_NM + PD_M_NM + PD_S_NM ~ month)
+RFM_F[is.na(RFM_F)]<-0
+RFM_F$Frequency<-apply(RFM_F[,5:16],1,sum)
+scale_min_max<-function(x){(x-min(x))/(max(x)-min(x))}
+RFM_F$Frequency<-scale_min_max(RFM_F$Frequency)
+
+
+RFM_M<- RFM %>% group_by(ID,PD_H_NM,PD_M_NM,PD_S_NM,month) %>% summarise(BUY_SUM=sum(BUY_SUM))
+RFM_M<- RFM_M %>% dcast(ID+ PD_H_NM + PD_M_NM + PD_S_NM ~ month)
+RFM_M[is.na(RFM_M)]<-0
+RFM_M$Money<-apply(RFM_M[,5:16],1,sum)
+RFM_M$Money<-scale_min_max(RFM_M$Money)
+
+RFM_R <- RFM_R %>% select(ID,PD_H_NM,PD_M_NM,PD_S_NM,Recency) %>% arrange(ID)
+RFM_F <- RFM_F %>% select(ID,PD_H_NM,PD_M_NM,PD_S_NM, Frequency) %>% arrange(ID)
+RFM_M <- RFM_M %>% select(ID,PD_H_NM,PD_M_NM,PD_S_NM, Money) %>% arrange(ID)
+
+User_RFM <- RFM_R %>% left_join(RFM_F) %>% left_join(RFM_M)
+User_RFM$RFM_score <- User_RFM %>% with(0.35 * Recency + 0.35 * Frequency + 0.3 * Money)
+User_RFM_A02 <- User_RFM
+
+User_RFM_A02_test <- User_RFM_A02 %>% group_by(ID,PD_H_NM,PD_M_NM) %>% summarise(RFM_score = sum(RFM_score))
+User_RFM_A02_test$RFM_score<-scale_min_max(User_RFM_A02_test$RFM_score)
+
+test <- User_RFM_A02_test %>% group_by(ID,PD_H_NM)%>% summarise(RFM_score=round(sum(RFM_score),5))
+test1 <- test %>% dcast(ID ~ PD_H_NM)
+# test[is.na(test)]<-0
+
+A02_PD_H_NM <- test1
+
+# A02_PD_H_NM_2<-A02_PD_H_NM
+# A02_PD_H_NM_2 <- ifelse(A02_PD_H_NM_2>0,1,0)
+# apply(A02_PD_H_NM_2,2,sum,na.rm=T)
+```
+
+# 3. 유저 기반 협업필터링 알고리즘
+```{r}
+target <- colnames(A02_PD_H_NM)[-1]
+A02_item <- list()
+A02_data.germany.user.scores <- list()
+A02_data.germany.user.scores.holder <- list()
+A02_all_buy_black <- list()
+A02_target_user <- list()
+A02_future_user <- list()
+
+for (p in 1:length(target)){
+
+A02_PD_H_NM_1 <-  User_RFM_A02 %>% subset(PD_H_NM == target[p]) %>% group_by(ID,PD_S_NM)%>% summarise(RFM_score=round(sum(RFM_score),5)) %>% dcast(ID ~ PD_S_NM)
+A02_PD_H_NM_1 <- A02_PD_H_NM_1[,-1]
+A02_PD_H_NM_1[is.na(A02_PD_H_NM_1)] <- 0
+A02_PD_H_NM_1 <- ifelse(A02_PD_H_NM_1>0,1,0)
+test_A02 <- apply(A02_PD_H_NM_1,2,sum) %>% as.data.frame 
+test_A02$total <- nrow(A02_PD_H_NM_1)
+test_A02$ratio <- round(test_A02$./test_A02$total,5)
+test_A02 <- test_A02 %>% subset(ratio > 0.5) %>% rownames
+A02_all_buy_black[[p]] <- test_A02
+# A02_PD_H_NM_2<-A02_PD_H_NM
+# A02_PD_H_NM_2 <- ifelse(A02_PD_H_NM_2>0,1,0)
+# apply(A02_PD_H_NM_2,2,sum,na.rm=T)[-1]
+
+target_user <- A02_PD_H_NM %>% select(ID,target[p])
+target_user <- target_user[which(!is.na(target_user[,2])),]
+A02_target_user[[p]] <- target_user[target_user[,2] > quantile(target_user[,2],0.75),]$ID
+A02_future_user[[p]] <- target_user[target_user[,2] <= quantile(target_user[,2],0.75),]$ID
+
+target_user <- SPI  %>% subset(BIZ_UNIT == "A02") %>% subset(ID %in% A02_target_user[[p]]) %>% subset(PD_H_NM==target[p]) %>% subset(!PD_S_NM %in% test_A02)
+
+UNI_SPI <- target_user %>% group_by(ID,PD_S_NM) %>% summarise(rating = n()) %>% as.data.frame()
+colnames(UNI_SPI) <- c("user","item","rating")
+UNI_SPI$user <- paste0("u",UNI_SPI$user)
+UNI_SPI$item <- paste0("",UNI_SPI$item)
+
+rating_df <- UNI_SPI
+rm(UNI_SPI);gc()
+rating_df <- rating_df %>% 
+    mutate(userId = user,
+           movieId = item) %>% select(-user,-item) 
+
+# 데이터프레임 -> 행렬 -> 희소행렬(realRatingMatrix)
+
+rating_mat <- spread(rating_df, movieId, rating) %>% 
+    remove_rownames() %>% 
+    column_to_rownames(var="userId")
+
+rating_mat[is.na(rating_mat)] <- 0
+
+# 협업 필터링 알고리즘에 사용가능한 형태로 데이터 변형
+
+data.germany <- rating_mat %>% as.data.frame
+
+data.germany$user <- rownames(data.germany)
+data.germany <- data.germany %>% select(user,everything())
+
+
+##############################################
+##########  Item Based Similarity   ##########
+##############################################
+############  list : A02_item   ##############
+############################################## 
+
+ 
+# Drop the user column and make a new data frame
+  data.germany.ibs <- (data.germany[,!(names(data.germany) %in% c("user"))])
+ 
+# Create a helper function to calculate the cosine between two vectors
+  getCosine <- function(x,y) 
+  {
+    this.cosine <- sum(x*y) / (sqrt(sum(x*x)) * sqrt(sum(y*y)))
+    return(this.cosine)
+  }
+ 
+# Create a placeholder dataframe listing item vs. item
+  holder <- matrix(NA, nrow=ncol(data.germany.ibs),ncol=ncol(data.germany.ibs),dimnames=list(colnames(data.germany.ibs),colnames(data.germany.ibs)))
+  data.germany.ibs.similarity <- as.data.frame(holder)
+ 
+# Lets fill in those empty spaces with cosine similarities
+  for(i in 1:ncol(data.germany.ibs)) {
+    for(j in 1:ncol(data.germany.ibs)) {
+      data.germany.ibs.similarity[i,j]= getCosine(data.germany.ibs[i],data.germany.ibs[j])
+    }
+  }
+
+# Get the top 5 neighbours for each
+  data.germany.neighbours <- matrix(NA, nrow=ncol(data.germany.ibs.similarity),ncol=6,dimnames=list(colnames(data.germany.ibs.similarity),0:5))
+ 
+  for(i in 1:ncol(data.germany.ibs)) 
+  {
+    data.germany.neighbours[i,] <- (t(head(n=6,rownames(data.germany.ibs.similarity[order(data.germany.ibs.similarity[,i],decreasing=TRUE),][i]))))
+  }
+ 
+# Output neighbour results to a file  
+  A02_item[[p]] <- data.germany.neighbours[,-1] %>% as.data.frame
+
+
+#################################################################################################################################
+##################################################  User Based Collaborative Filtering   ########################################
+#################################################################################################################################
+
+  
+################################################################
+##########  User Based Collaborative filtering Score  ##########
+################################################################ 
+########### list : A02_data.germany.user.scores  ###############
+################################################################
+  
+# Process:
+# Choose a product, see if the user purchased a product
+# Get the similarities of that product's top 10 neighbours
+# Get the purchase record of that user of the top 10 neighbours
+# Do the formula: sumproduct(purchaseHistory, similarities)/sum(similarities)
+
+# Lets make a helper function to calculate the scores
+  getScore <- function(history, similarities)
+  {
+    x <- sum(history*similarities)/sum(similarities)
+    x
+  }
+
+# A placeholder matrix
+ holder <- matrix(NA, nrow=nrow(data.germany),ncol=ncol(data.germany)-1,dimnames=list((data.germany$user),colnames(data.germany[-1])))
+
+# Loop through the users (rows)
+   for(i in 1:nrow(holder))
+   {
+       # Loops through the products (columns)
+       for(j in 1:ncol(holder))
+       {
+         # if(j==7){holder[i,j]<-0}
+         # else{
+           # Get the user's name and th product's name
+           # We do this not to conform with vectors sorted differently
+             user <- rownames(holder)[i]
+             product <- colnames(holder)[j]
+
+           # We do not want to recommend products you have already consumed
+           # If you have already consumed it, we store an empty string
+             if(as.integer(data.germany[data.germany$user==user,product]) > 0)
+             {
+                 holder[i,j]<-""
+              } else {
+
+           # We first have to get a product's top 10 neighbours sorted by similarity
+             topN<-((head(n=6,(data.germany.ibs.similarity[order(data.germany.ibs.similarity[,product],decreasing=TRUE),][product]))))
+             topN.names <- as.character(rownames(topN))
+             topN.similarities <- as.numeric(topN[,1])
+
+           # Drop the first one because it will always be the same song
+             topN.similarities<-topN.similarities[-1]
+             topN.names<-topN.names[-1]
+
+           # We then get the user's purchase history for those 10 items
+             topN.purchases<- data.germany[,c("user",topN.names)]
+             topN.userPurchases<-topN.purchases[topN.purchases$user==user,]
+             topN.userPurchases <- as.numeric(topN.userPurchases[!(names(topN.userPurchases) %in% c("user"))])
+
+            # We then calculate the score for that product and that use
+             holder[i,j]<-getScore(similarities=topN.similarities,history=topN.userPurchases)
+              # }# close else statement
+         } # close else statement
+       } # end product for loop
+   } # end user for loop
+holder<- ifelse(holder=="",0,holder)
+
+# Output the results to a file
+data.germany.user.scores <- holder
+A02_data.germany.user.scores[[p]] <- holder
+
+
+  
+##########################################################################
+##########  User Based Collaborative filtering - Item recommend  #########
+########################################################################## 
+############# list : A02_data.germany.user.scores.holder  ################
+##########################################################################
+
+# Lets make our recommendations pretty
+  data.germany.user.scores.holder <- matrix(NA, nrow=nrow(data.germany.user.scores),ncol=5,dimnames=list(rownames(data.germany.user.scores)))
+  
+  for(i in 1:nrow(data.germany.user.scores)) 
+  {
+    data.germany.user.scores.holder[i,] <- names(head(n=5,(data.germany.user.scores[,order(data.germany.user.scores[i,],decreasing=TRUE)])[i,]))
+  }
+  
+A02_data.germany.user.scores.holder[[p]] <- data.germany.user.scores.holder
+}
+```
+
+
+# 4. 개인별 인기 아이템 추천 알고리즘
+```{r}
+###########################################################################################################################
+###########################################  Individual Popular Recommender System   ######################################
+###########################################################################################################################
+
+
+######################################################################
+##########  Individual Popular Recommender System Score  #############
+###################################################################### 
+####################### list : A02_user_popular  #####################
+######################################################################
+
+
+A02_user_popular <-list()
+A02_user_popular.holder <- list()
+
+for (p in 1:length(target)){
+User_RFM_A02_S <- User_RFM_A02 %>% 
+  subset(PD_H_NM==target[p]) %>% 
+  subset(ID %in% A02_target_user[[p]]) %>% 
+  dcast(ID ~ PD_S_NM)
+User_RFM_A02_S[is.na(User_RFM_A02_S)]<-0
+A02_user_popular[[p]] <- User_RFM_A02_S
+A02_user_popular[[p]][A02_user_popular[[p]]==0.00000000]<-NA
+rownames(A02_user_popular[[p]]) <- paste0('u',A02_user_popular[[p]]$ID)
+A02_user_popular[[p]] <- A02_user_popular[[p]][,-1]
+}
+
+
+#############################################################################
+##########  Individual Popular Recommender System - Item recommend  #########
+#############################################################################
+####################### list : A02_user_popular.holder  #####################
+#############################################################################
+
+
+for (p in 1:length(target)){
+  # Lets make our recommendations pretty
+    data.germany.user.scores.holder <- matrix(NA, nrow=nrow(A02_user_popular[[p]]),ncol=10,dimnames=list(rownames(nrow(A02_user_popular[[p]]))))
+
+  for(i in 1:nrow(data.germany.user.scores.holder)) 
+  {
+    test_length <- A02_user_popular[[p]][,order(A02_user_popular[[p]][i,],decreasing=T)][i,] %>% length
+    if(test_length>10) {
+      test <- A02_user_popular[[p]][,order(A02_user_popular[[p]][i,],decreasing=T)][i,][1:10]
+      }else{test <- head(n=10,A02_user_popular[[p]][,order(A02_user_popular[[p]][i,],decreasing=T)][i,])}
+    data.germany.user.scores.holder[i,] <- c(names(test)[1:length(test[!is.na(test)])],rep(NA,10-length(names(test)[1:length(test[!is.na(test)])])))
+  }
+  
+  A02_user_popular.holder[[p]] <- data.germany.user.scores.holder
+  rownames(A02_user_popular.holder[[p]]) <- rownames(A02_user_popular[[p]])
+}
+```
+
+# 5. A02 업종에서의 취향 순위
+```{r}
+A02_interest <- A02_PD_H_NM
+A02_interest[,-1] <- apply(A02_interest[,-1],2,function(x)ifelse(x <= quantile(x,0.75,na.rm=T),NA,x))
+A02_interest_s <- A02_interest
+A02_interest_s[,-1] <- ifelse(A02_interest_s[,-1] > 0 ,1 ,0)
+A02_interest$type_num <- apply(A02_interest_s[,-1],1,sum,na.rm=T)
+A02_interest <- A02_interest %>% subset(type_num>0)
+
+A02_interest_test <- A02_interest[,2:(ncol(A02_interest)-1)]
+rownames(A02_interest_test) <- paste0('u',A02_interest$ID)
+
+data.germany.user.scores.holder <- matrix(NA, nrow=nrow(A02_interest_test),ncol=10,dimnames=list(rownames(nrow(A02_interest_test))))
+ for(i in 1:nrow(data.germany.user.scores.holder)) {
+    test_length <- A02_interest_test[,order(A02_interest_test[i,],decreasing=T)][i,] %>% length
+    if(test_length>10) {
+      test <- A02_interest_test[,order(A02_interest_test[i,],decreasing=T)][i,][1:10]
+    }else{
+        test <- head(n=10,A02_interest_test[,order(A02_interest_test[i,],decreasing=T)][i,])
+        }
+    
+    data.germany.user.scores.holder[i,] <- c(names(test)[1:length(test[!is.na(test)])],rep(NA,10-length(names(test)[1:length(test[!is.na(test)])])))
+}
+  A02_interest.holder <- data.germany.user.scores.holder
+  rownames(A02_interest.holder) <- rownames(A02_interest_test)
+
+  
+
+```
+
+# 6. 개인화 아이템 추천 알고리즘(User-Based Collaborative Filtering with cosine similarity + Individual popular recommender system)
+```{r} 
+A02_interest.holder_S <- A02_interest.holder
+for(i in 1:nrow(A02_interest.holder_S)){
+    A02_interest.holder_S[i,]<-head(n=10,rep(A02_interest.holder_S[i,][!is.na(A02_interest.holder_S[i,])],10))
+  }
+  
+ 
+data.germany.user.scores.holder <- matrix(NA, nrow=nrow(A02_interest.holder_S),ncol=100,dimnames=list(rownames(nrow(A02_interest.holder_S))))
+rownames(data.germany.user.scores.holder) <- rownames(A02_interest.holder_S)
+A02_user_popular.holder_copy <- A02_user_popular.holder
+A02_data.germany.user.scores.holder_copy <- A02_data.germany.user.scores.holder
+
+for (i in 1:nrow(A02_interest.holder_S)){
+  k=1
+  for(j in 1:ncol(A02_interest.holder_S)){
+    u <- names(A02_interest.holder_S[i,j])
+    p <- which(A02_interest.holder_S[i,j]==target)
+     if(sum(rownames(A02_user_popular.holder_copy[[p]]) %in% u)==1){
+       if(!is.na(A02_user_popular.holder_copy[[p]][u,1])){
+      data.germany.user.scores.holder[i,k] <- A02_user_popular.holder_copy[[p]][u,1]
+      A02_user_popular.holder_copy[[p]][u,] <- c(A02_user_popular.holder_copy[[p]][u,][-1],NA)
+      k=k+1
+    }}
+    if(sum(rownames(A02_data.germany.user.scores.holder_copy[[p]]) %in% u)==1){
+      if(!is.na(A02_data.germany.user.scores.holder_copy[[p]][u,1])){
+      data.germany.user.scores.holder[i,k] <- A02_data.germany.user.scores.holder_copy[[p]][u,1]
+      A02_data.germany.user.scores.holder_copy[[p]][u,] <- c(A02_data.germany.user.scores.holder_copy[[p]][u,][-1],NA)
+      k=k+1
+    }}
+  }
+}
+
+
+A02_total_recomm <- data.germany.user.scores.holder
+```
+
+# 7. EDA : A02 업종에서 취향(대분류)별 성별, 나이 요약 정보
+```{r}
+# user <- read_csv("../data/user.csv")
+# 
+# for (i in 1:length(target)){
+# print(target[i])
+# target_user_id <- user_popular[[i]]$ID %>% unique
+# target_user_new <- SPI %>% subset(ID %in% target_user_id)
+# target_user_new <- target_user_new %>% group_by(ID,GENDER,AGE_PRD,HOM_PST_NO,si,gu) %>% summarise(cnt=n())
+# # lapply(target_user_new[,c(2,3,4,5,6)],function(x)table(x))
+# 
+# print((target_user_new$AGE_PRD %>% table %>% as.matrix) / (user$AGE_PRD %>% table %>% as.matrix))
+# print((target_user_new$GENDER %>% table %>% as.matrix) / (user$GENDER %>% table %>% as.matrix))
+# }
+```
+
+# 8. EDA : A02 업종에서 개인이 가진 취향의 개수 분포
+```{r}
+# A02_PD_H_NM_test <- A02_PD_H_NM
+# A02_PD_H_NM_test[,-1] <- lapply(A02_PD_H_NM[,-1],function(x) ifelse(x>quantile(x,0.75,na.rm=T),1,0))
+# A02_PD_H_NM_test[is.na(A02_PD_H_NM_test)]<-0
+# A02_PD_H_NM_test$type_num <- apply(A02_PD_H_NM_test[,-1],1,sum)
+# 
+# A02_PD_H_NM_test %>% ggplot(aes(x=as.factor(type_num))) + geom_bar() +  xlab("A02")
+# A02_PD_H_NM_test$type_num %>% table
+```
+
+

@@ -1,0 +1,292 @@
+---
+title: "User Recommender System"
+output: html_document
+---
+
+# 1. 패키지 로드
+```{r}
+library(needs)
+needs(dplyr, stringr, tibble, lubridate, ggplot2, reshape2,readr,tidyr)
+```
+
+# 2. 데이터 로드
+```{r}
+# user <- read.csv("../data/user.csv")
+# ADDRESS <- read_csv("../data/address.csv")
+# user <- user %>% left_join(ADDRESS)
+```
+
+# 3. 유저 ID 입력
+```{r}
+user_ID <- 13087
+```
+
+# 4. 유저 정보, 추천 정보를 얻기 위한 알고리즘
+```{r}
+all_inf_list <- user %>% subset(ID==user_ID)
+
+
+A01_type <- NA
+A02_type <- NA
+A03_type <- NA
+A04_type <- NA
+A05_type <- NA
+
+
+A01_user_base <- list()
+A02_user_base <- list()
+A03_user_base <- list()
+A04_user_base <- list()
+A05_user_base <- list()
+
+
+A01_popular <- list()
+A02_popular <- list()
+A03_popular <- list()
+A04_popular <- list()
+A05_popular <- list()
+
+
+A01_recomm <- NA
+A02_recomm <- NA
+A03_recomm <- NA
+A04_recomm <- NA
+A05_recomm <- NA
+
+
+
+for(p in 1:ncol(A01_PD_H_NM[-1])){
+  if(paste0('u',user_ID) %in% rownames(A01_data.germany.user.scores.holder[[p]])){
+    A01_user_base[[p]] <- A01_data.germany.user.scores.holder[[p]][paste0('u',user_ID),][!is.na(A01_data.germany.user.scores.holder[[p]][paste0('u',user_ID),])]
+  }else{A01_user_base[[p]] <- NA}
+}
+for(p in 1:ncol(A02_PD_H_NM[-1])){
+  if(paste0('u',user_ID) %in% rownames(A02_data.germany.user.scores.holder[[p]])){
+    A02_user_base[[p]] <- A02_data.germany.user.scores.holder[[p]][paste0('u',user_ID),][!is.na(A02_data.germany.user.scores.holder[[p]][paste0('u',user_ID),])]
+  }else{A02_user_base[[p]] <- NA}
+}
+for(p in 1:ncol(A03_PD_H_NM[-1])){
+  if(paste0('u',user_ID) %in% rownames(A03_data.germany.user.scores.holder[[p]])){
+    A03_user_base[[p]] <- A03_data.germany.user.scores.holder[[p]][paste0('u',user_ID),][!is.na(A03_data.germany.user.scores.holder[[p]][paste0('u',user_ID),])]
+  }else{A03_user_base[[p]] <- NA}
+}
+for(p in 1:ncol(A04_PD_H_NM[-1])){
+  if(paste0('u',user_ID) %in% rownames(A04_data.germany.user.scores.holder[[p]])){
+    A04_user_base[[p]] <- A04_data.germany.user.scores.holder[[p]][paste0('u',user_ID),][!is.na(A04_data.germany.user.scores.holder[[p]][paste0('u',user_ID),])]
+  }else{A04_user_base[[p]] <- NA}
+}
+for(p in 1:ncol(A05_PD_H_NM[-1])){
+  if(paste0('u',user_ID) %in% rownames(A05_data.germany.user.scores.holder[[p]])){
+    A05_user_base[[p]] <- A05_data.germany.user.scores.holder[[p]][paste0('u',user_ID),][!is.na(A05_data.germany.user.scores.holder[[p]][paste0('u',user_ID),])]
+  }else{A05_user_base[[p]] <- NA}
+}
+
+
+
+for(p in 1:ncol(A01_PD_H_NM[-1])){
+  if(paste0('u',user_ID) %in% rownames(A01_user_popular.holder[[p]])){
+    A01_popular[[p]] <- A01_user_popular.holder[[p]][paste0('u',user_ID),][!is.na(A01_user_popular.holder[[p]][paste0('u',user_ID),])]
+  }else{A01_popular[[p]] <- NA}
+}
+for(p in 1:ncol(A02_PD_H_NM[-1])){
+  if(paste0('u',user_ID) %in% rownames(A02_user_popular.holder[[p]])){
+    A02_popular[[p]] <- A02_user_popular.holder[[p]][paste0('u',user_ID),][!is.na(A02_user_popular.holder[[p]][paste0('u',user_ID),])]
+  }else{A02_popular[[p]] <- NA}
+}
+
+for(p in 1:ncol(A03_PD_H_NM[-1])){
+  if(paste0('u',user_ID) %in% rownames(A03_user_popular.holder[[p]])){
+    A03_popular[[p]] <- A03_user_popular.holder[[p]][paste0('u',user_ID),][!is.na(A03_user_popular.holder[[p]][paste0('u',user_ID),])]
+  }else{A03_popular[[p]] <- NA}
+}
+for(p in 1:ncol(A04_PD_H_NM[-1])){
+  if(paste0('u',user_ID) %in% rownames(A04_user_popular.holder[[p]])){
+    A04_popular[[p]] <- A04_user_popular.holder[[p]][paste0('u',user_ID),][!is.na(A04_user_popular.holder[[p]][paste0('u',user_ID),])]
+  }else{A04_popular[[p]] <- NA}
+}
+for(p in 1:ncol(A05_PD_H_NM[-1])){
+  if(paste0('u',user_ID) %in% rownames(A05_user_popular.holder[[p]])){
+    A05_popular[[p]] <- A05_user_popular.holder[[p]][paste0('u',user_ID),][!is.na(A05_user_popular.holder[[p]][paste0('u',user_ID),])]
+  }else{A05_popular[[p]] <- NA}
+}
+
+
+
+if(paste0('u',user_ID) %in% rownames(A01_interest.holder)){
+  A01_type <- A01_interest.holder[paste0('u',user_ID),][!is.na(A01_interest.holder[paste0('u',user_ID),])]
+  names(A01_user_base) <- colnames(A01_PD_H_NM[-1])
+  names(A01_popular) <- colnames(A01_PD_H_NM[-1])
+}else{
+  A01_user_base <- list()
+  A01_popular <- list()
+}
+
+if(paste0('u',user_ID) %in% rownames(A02_interest.holder)){
+  A02_type <- A02_interest.holder[paste0('u',user_ID),][!is.na(A02_interest.holder[paste0('u',user_ID),])]
+  names(A02_user_base) <- colnames(A02_PD_H_NM[-1])
+  names(A02_popular) <- colnames(A02_PD_H_NM[-1])
+}else{
+  A02_user_base <- list()
+  A02_popular <- list()
+}
+
+if(paste0('u',user_ID) %in% rownames(A03_interest.holder)){
+  A03_type <- A03_interest.holder[paste0('u',user_ID),][!is.na(A03_interest.holder[paste0('u',user_ID),])]
+  names(A03_user_base) <- colnames(A03_PD_H_NM[-1])
+  names(A03_popular) <- colnames(A03_PD_H_NM[-1])
+}else{
+  A03_user_base <- list()
+  A03_popular <- list()
+}
+
+if(paste0('u',user_ID) %in% rownames(A04_interest.holder)){
+  A04_type <- A04_interest.holder[paste0('u',user_ID),][!is.na(A04_interest.holder[paste0('u',user_ID),])]
+  names(A04_user_base) <- colnames(A04_PD_H_NM[-1])
+  names(A04_popular) <- colnames(A04_PD_H_NM[-1])
+}else{
+  A04_user_base <- list()
+  A04_popular <- list()
+}
+
+if(paste0('u',user_ID) %in% rownames(A05_interest.holder)){
+  A05_type <- A05_interest.holder[paste0('u',user_ID),][!is.na(A05_interest.holder[paste0('u',user_ID),])]
+  names(A05_user_base) <- colnames(A05_PD_H_NM[-1])
+  names(A05_popular) <- colnames(A05_PD_H_NM[-1])
+}else{
+  A05_user_base <- list()
+  A05_popular <- list()
+}
+
+
+
+if(paste0('u',user_ID) %in% rownames(A01_total_recomm)){
+  A01_recomm <- A01_total_recomm[paste0('u',user_ID),][!is.na(A01_total_recomm[paste0('u',user_ID),])]
+}
+if(paste0('u',user_ID) %in% rownames(A02_total_recomm)){
+  A02_recomm <- A02_total_recomm[paste0('u',user_ID),][!is.na(A02_total_recomm[paste0('u',user_ID),])]
+}
+if(paste0('u',user_ID) %in% rownames(A03_total_recomm)){
+  A03_recomm <- A03_total_recomm[paste0('u',user_ID),][!is.na(A03_total_recomm[paste0('u',user_ID),])]
+}
+if(paste0('u',user_ID) %in% rownames(A04_total_recomm)){
+  A04_recomm <- A04_total_recomm[paste0('u',user_ID),][!is.na(A04_total_recomm[paste0('u',user_ID),])]
+}
+if(paste0('u',user_ID) %in% rownames(A05_total_recomm)){
+  A05_recomm <- A05_total_recomm[paste0('u',user_ID),][!is.na(A05_total_recomm[paste0('u',user_ID),])]
+}
+
+
+
+test<- SPI %>% 
+  group_by(ID,BIZ_UNIT,BR_C,DE_DT,PD_H_NM) %>% 
+  summarise(cnt = n())
+
+test<- test %>% 
+  subset(ID==user_ID) %>% 
+  group_by(BIZ_UNIT,PD_H_NM) %>% 
+  summarise(cnt=n()) %>% 
+  arrange(BIZ_UNIT,-cnt)
+
+if (nrow(test)==0){
+  print("거래내역이 없는 고객입니다.")
+}else{
+  
+test$PD_H_NM<- paste0(test$PD_H_NM,"_",substr(test$BIZ_UNIT,3,3))
+nameorder <- test$PD_H_NM[order(test$BIZ_UNIT, test$cnt)]
+test$PD_H_NM <- factor(test$PD_H_NM, levels = nameorder)
+
+p1 <- ggplot(test, aes(x = cnt, y = reorder(PD_H_NM, cnt))) + 
+  geom_segment(aes(yend = reorder(PD_H_NM, cnt)), xend = 0, color = "grey50") + 
+  geom_point(size = 2, aes(color = BIZ_UNIT)) + 
+  theme_bw() + 
+  theme(panel.grid.major.y = element_blank()) + facet_grid(BIZ_UNIT ~ ., scales = "free_y", space = "free_y") 
+
+p2 <- LS_TOTAL %>% 
+  subset(ID==user_ID) %>% 
+  ggplot(aes(x=day, y=DE_HR, fill = -cnt)) +
+  geom_tile(colour="gray")+
+  geom_text(aes(x=day, y=DE_HR,label=cnt)) +
+  theme(axis.text.x=element_text(angle=90, hjust=1)) +
+  scale_x_discrete(limits=c("월요일","화요일","수요일","목요일","금요일","토요일","일요일")) +
+  facet_grid(~BIZ_UNIT_kor) 
+}
+
+```
+
+
+# 5. 결과 
+
+## 1) 유저 개인 정보
+```{r}
+# console창에 입력해서 볼 수 있습니다.
+all_inf_list
+```
+
+## 2) 업종별 취향
+```{r}
+cat("< A01 >\n")
+A01_type
+cat("\n< A02 >\n")
+A02_type
+cat("\n< A03 >\n")
+A03_type
+cat("\n< A04 >\n")
+A04_type
+cat("\n< A05 >\n")
+A05_type
+```
+
+## 3) 업종, 취향별 User-Based Collaborative Filtering 알고리즘 추천 아이템
+```{r}
+cat("< A01 >\n")
+A01_user_base
+cat("\n< A02 >\n")
+A02_user_base
+cat("\n< A03 >\n")
+A03_user_base
+cat("\n< A04 >\n")
+A04_user_base
+cat("\n< A05 >\n")
+A05_user_base
+```
+
+## 4) 업종, 취향별 개인별 인기 알고리즘 추천 아이템
+```{r}
+cat("< A01 >\n")
+A01_popular
+cat("\n< A02 >\n")
+A02_popular
+cat("\n< A03 >\n")
+A03_popular
+cat("\n< A04 >\n")
+A04_popular
+cat("\n< A05 >\n")
+A05_popular
+```
+
+## 5) 최종 결과 :  업종별 추천 아이템
+```{r}
+cat("< A01 >\n")
+A01_recomm
+cat("\n< A02 >\n")
+A02_recomm
+cat("\n< A03 >\n")
+A03_recomm
+cat("\n< A04 >\n")
+A04_recomm
+cat("\n< A05 >\n")
+A05_recomm
+```
+
+## 6) 사용자별 업종, 취향 방문 빈도
+```{r}
+p1
+```
+
+## 7) 사용자별 업종 방문 시각화
+```{r}
+p2
+```
+
+
+
